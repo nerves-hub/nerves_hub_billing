@@ -2,7 +2,7 @@
 
 set -e
 
-export AWS_ENV_PATH="/$APP_NAME/$ENVIRONMENT/"
+export AWS_ENV_PATH="/nerves_hub_billing/$ENVIRONMENT/"
 
 # Set env vars from AWS SSM
 # This uses get-parameters-from-path and automatically sets any that match the prefix above (AWS_ENV_PATH)

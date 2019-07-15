@@ -22,5 +22,3 @@ config :rollbax,
   environment: to_string(Mix.env()),
   enabled: true,
   enable_crash_reports: true
-
-config :rollbax, access_token: System.fetch_env!("ROLLBAR_ACCESS_TOKEN")

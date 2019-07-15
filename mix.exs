@@ -1,16 +1,21 @@
 defmodule NervesHubBilling.MixProject do
   use Mix.Project
 
+  @app :nerves_hub_billing
+  @version "0.1.0"
+
   def project do
     [
-      app: :nerves_hub_billing,
-      version: "0.1.0",
-      elixir: "~> 1.5",
+      app: @app,
+      version: @version,
+      elixir: "~> 1.9",
       elixirc_paths: elixirc_paths(Mix.env()),
+      # test_coverage: [tool: ExCoveralls],
       compilers: [:phoenix, :gettext] ++ Mix.compilers(),
       start_permanent: Mix.env() == :prod,
       aliases: aliases(),
-      deps: deps()
+      deps: deps(),
+      releases: [{@app, release()}]
     ]
   end
 
@@ -38,11 +43,12 @@ defmodule NervesHubBilling.MixProject do
       {:ecto_sql, "~> 3.1"},
       {:postgrex, ">= 0.0.0"},
       {:phoenix_html, "~> 2.11"},
-      {:phoenix_live_reload, "~> 1.2", only: :dev},
       {:gettext, "~> 0.11"},
       {:jason, "~> 1.0"},
       {:plug_cowboy, "~> 2.0"},
-      {:rollbax, "~> 0.10.0"}
+      {:rollbax, "~> 0.10.0"},
+      {:phoenix_live_reload, "~> 1.2", only: :dev},
+      {:excoveralls, "~> 0.8", only: :test}
     ]
   end
 
@@ -57,6 +63,13 @@ defmodule NervesHubBilling.MixProject do
       "ecto.setup": ["ecto.create", "ecto.migrate", "run priv/repo/seeds.exs"],
       "ecto.reset": ["ecto.drop", "ecto.setup"],
       test: ["ecto.create --quiet", "ecto.migrate", "test"]
+    ]
+  end
+
+  defp release() do
+    [
+      steps: [:assemble],
+      include_executables_for: [:unix]
     ]
   end
 end
