@@ -1,0 +1,216 @@
+defaults: &defaults
+  docker:
+    - image: nerveshub/docker-build:alpine-3.9
+  working_directory: ~/repo
+
+remote_docker: &remote_docker
+  setup_remote_docker:
+    version: 17.09.0-ce
+
+docker_env: &docker_env
+  run:
+    name: Set docker env
+    command: |
+      if [ -z "$CIRCLE_TAG" ]; then
+      BRANCH=$(git rev-parse --abbrev-ref HEAD)
+        SHA=$(git rev-parse --short HEAD)
+        TAG=$(echo "v.$BRANCH.$SHA" | sed 's/\//_/g')
+      else
+        TAG=$CIRCLE_TAG
+      fi
+      echo "export DOCKER_TAG=$TAG" >> $BASH_ENV
+
+docker_build_release: &docker_build_release
+  run:
+    name: Build docker images
+    command: |
+      docker build \
+        -t nerveshub/$APP_NAME:$DOCKER_TAG \
+        -f apps/$APP_NAME/rel/Dockerfile.build .
+
+docker_save: &docker_save
+  run:
+    name: Save docker images
+    command: |
+      mkdir -p /docker
+      docker save \
+        nerveshub/$APP_NAME:$DOCKER_TAG \
+        -o /docker/$APP_NAME-$DOCKER_TAG.tar
+
+docker_import: &docker_import
+  run:
+    name: Import docker images
+    command: |
+      docker load \
+        -i /docker/$APP_NAME-$DOCKER_TAG.tar
+
+docker_push: &docker_push
+  run:
+    name: Push docker images to dockerhub
+    command: |
+      docker login -u $DOCKER_USER -p $DOCKER_PASS
+      docker push \
+        nerveshub/$APP_NAME:$DOCKER_TAG
+
+migrate: &migrate
+  run:
+    name: Run Migrations
+    command: |
+      NERVES_HUB_TASK=$(rel/scripts/ecs-update-task.sh nerves_hub_billing nerveshub/nerves_hub_billing:$DOCKER_TAG)
+      rel/scripts/ecs-migrate.sh \
+        nerves-hub \
+        $NERVES_HUB_TASK
+
+deploy: &deploy
+  run:
+    name: Deploy to production
+    command: |
+      set -euo pipefail
+      rel/scripts/ecs-deploy.sh \
+        nerves-hub \
+        $SERVICE \
+        nerveshub/$APP_NAME:$DOCKER_TAG
+
+send_notifications: &send_notifications
+  run:
+    name: Send notifications
+    command: |
+      rel/scripts/slack-notification.sh \
+        $SLACK_INCOMING_WEBHOOK_URL \
+        "#nerves-hub" \
+        "NervesHub Deployment" "Deployed: \`$APP_NAME:$DOCKER_TAG\`"
+
+version: 2
+jobs:
+  fetch_deps:
+    docker:
+      - image: circleci/elixir:1.9
+        environment:
+          MIX_ENV: test
+    working_directory: ~/app
+
+    steps:
+      - checkout
+      - run: mix local.hex --force
+      - run: mix local.rebar --force
+      - run: mix do deps.get
+      - save_cache:
+          key: mix-deps-{{ .Branch }}-{{ checksum "mix.lock" }}
+          paths: "deps"
+
+  test_elixir:
+    docker:
+      - image: circleci/elixir:1.9
+        environment:
+          MIX_ENV: test
+          DATABASE_URL: postgres://db:db@localhost:5432/db
+          SECRET_KEY_BASE: ${SECRET_KEY_BASE:-BGC824f8kh1IQPXK7bUmXDigrw404rA7rivR96vGv4bhMIRogiaFN7Z6R4duZClA}
+      - image: circleci/postgres:10.1-alpine
+        environment:
+          POSTGRES_USER: db
+          POSTGRES_DB: db
+          POSTGRES_PASSWORD: db
+    working_directory: ~/app
+    steps:
+      - checkout
+      - run: mix local.hex --force
+      - run: mix local.rebar --force
+      - restore_cache:
+          keys:
+            - mix-deps-{{ .Branch }}-{{ checksum "mix.lock" }}
+      - run: mix compile
+      - run:
+          name: Wait for DB
+          command: dockerize -wait tcp://localhost:5432 -timeout 1m
+      - run:
+          name: Test
+          command: mix coveralls.circle --umbrella
+      - run:
+          name: Verify formatting
+          command: mix format --check-formatted
+
+  build:
+    <<: *defaults
+    steps:
+      - checkout
+      - run: echo "export APP_NAME=nerves_hub_billing" >> $BASH_ENV
+      - <<: *remote_docker
+      - <<: *docker_env
+      - <<: *docker_build_release
+      - <<: *docker_save
+      - save_cache:
+          key: docker-billing-{{ .Branch }}-{{ .Revision }}
+          paths: "/docker"
+
+  push:
+    <<: *defaults
+    steps:
+      - checkout
+      - run: echo "export APP_NAME=nerves_hub_billing" >> $BASH_ENV
+      - <<: *remote_docker
+      - <<: *docker_env
+      - restore_cache:
+          keys:
+            - docker-billing-{{ .Branch }}-{{ .Revision }}
+      - <<: *docker_import
+      - <<: *docker_push
+
+  migrate:
+    <<: *defaults
+    steps:
+      - checkout
+      - run: echo "export APP_NAME=nerves_hub_billing" >> $BASH_ENV
+      - run: echo "export SERVICE=nerves-hub-billing" >> $BASH_ENV
+      - <<: *docker_env
+      - run:
+          name: Lock deployments
+          command: rel/scripts/build-locking.sh --job-name migrate
+      - <<: *migrate
+
+  deploy:
+    <<: *defaults
+    steps:
+      - checkout
+      - run: echo "export APP_NAME=nerves_hub_billing" >> $BASH_ENV
+      - run: echo "export SERVICE=nerves-hub-billing" >> $BASH_ENV
+      - <<: *docker_env
+      - run:
+          name: Lock deployments
+          command: rel/scripts/build-locking.sh --job-name deploy
+      - <<: *deploy
+      - <<: *send_notifications
+
+workflows:
+  version: 2
+  pipeline:
+      jobs:
+        - fetch_deps
+        - test_elixir:
+            context: org-global
+            requires:
+              - fetch_deps
+        - build:
+            context: org-global
+            requires:
+              - test_elixir
+        - push:
+            context: org-global
+            requires:
+              - build
+            filters:
+              branches:
+                only: master
+        - migrate:
+            context: org-global
+            requires:
+              - push
+            filters:
+              branches:
+                only: master
+        - deploy:
+            context: org-global
+            requires:
+              - migrate
+            filters:
+              branches:
+                only: master

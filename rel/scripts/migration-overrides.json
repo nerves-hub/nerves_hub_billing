@@ -1,0 +1,8 @@
+{
+  "containerOverrides": [
+    {
+      "name": "nerves_hub_billing",
+      "command": ["/app/bin/nerves_hub_billing", "eval", "NervesHubBilling.Release.Tasks.migrate_and_seed()"]
+    }
+  ]
+}
