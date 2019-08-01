@@ -30,4 +30,4 @@ RUN ["chmod", "+x", "/app/s3-sync.sh"]
 
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
 
-CMD ["/app/ecs-cluster.sh"]
+CMD ["/app/bin/nerves_hub_billing start"]

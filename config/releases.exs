@@ -1,3 +1,7 @@
 import Config
 
-config :rollbax, access_token: System.fetch_env!("ROLLBAR_ACCESS_TOKEN")
+if rollbar_access_token = System.get_env("ROLLBAR_ACCESS_TOKEN") do
+  config :rollbax, access_token: rollbar_access_token
+else
+  config :rollbax, enabled: false
+end

@@ -7,7 +7,6 @@ SERVICE_NAME=$2
 IMAGE=$3
 MIN_PERCENTAGE=${4:-100}
 MAX_PERCENTAGE=${5:-200}
-REGION="us-east-1"
 
 
 if [ -z "$IMAGE" ]; then
@@ -17,8 +16,7 @@ fi
 
 echo "Deploying $SERVICE_NAME to $CLUSTER..."
 echo "================="
-ecs-deploy --region $REGION \
-           --cluster $CLUSTER \
+ecs-deploy --cluster $CLUSTER \
            --service-name $SERVICE_NAME \
            --image $IMAGE \
            --timeout 720 \
